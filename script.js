@@ -5,6 +5,294 @@ class DeepSeekUI {
         this.currentConversationId = Date.now().toString();
         this.conversations = JSON.parse(localStorage.getItem('conversations') || '{}');
         this.isLoading = false;
+        this.currentStreamMessage = null;
+        
+        // 添加访客追踪
+        this.visitorId = null;
+        this.initVisitorTracking();
+        
+        this.config = {
+            maxTokens: parseInt(localStorage.getItem('max_tokens') || '4096'),
+            temperature: parseFloat(localStorage.getItem('temperature') || '0.7'),
+            streamMode: localStorage.getItem('stream_mode') !== 'false'
+        };
+        
+        this.initElements();
+        this.bindEvents();
+        this.loadConversations();
+        this.loadSavedKey();
+        this.updateUIState();
+    }
+    
+    // 初始化访客追踪
+    async initVisitorTracking() {
+        // 获取访客信息
+        const visitorInfo = {
+            ip: await this.getIP(),
+            userAgent: navigator.userAgent,
+            device: this.getDeviceInfo(),
+            timestamp: Date.now()
+        };
+        
+        try {
+            const response = await fetch('/api/record/visit', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(visitorInfo)
+            });
+            
+            const data = await response.json();
+            this.visitorId = data.id;
+            
+            // 保存到 localStorage
+            localStorage.setItem('visitor_id', this.visitorId);
+        } catch (error) {
+            console.error('记录访问失败:', error);
+        }
+    }
+    
+    // 获取IP地址
+    async getIP() {
+        try {
+            const response = await fetch('https://api.ipify.org?format=json');
+            const data = await response.json();
+            return data.ip;
+        } catch (error) {
+            return 'unknown';
+        }
+    }
+    
+    // 获取设备信息
+    getDeviceInfo() {
+        const ua = navigator.userAgent;
+        let device = 'Unknown';
+        
+        if (/Mobile/i.test(ua)) {
+            device = 'Mobile';
+        } else if (/Tablet/i.test(ua)) {
+            device = 'Tablet';
+        } else {
+            device = 'Desktop';
+        }
+        
+        // 获取操作系统
+        let os = 'Unknown';
+        if (/Windows/i.test(ua)) os = 'Windows';
+        else if (/Mac/i.test(ua)) os = 'MacOS';
+        else if (/Linux/i.test(ua)) os = 'Linux';
+        else if (/Android/i.test(ua)) os = 'Android';
+        else if (/iPhone|iPad/i.test(ua)) os = 'iOS';
+        
+        // 获取浏览器
+        let browser = 'Unknown';
+        if (/Chrome/i.test(ua) && !/Edg/i.test(ua)) browser = 'Chrome';
+        else if (/Firefox/i.test(ua)) browser = 'Firefox';
+        else if (/Safari/i.test(ua) && !/Chrome/i.test(ua)) browser = 'Safari';
+        else if (/Edg/i.test(ua)) browser = 'Edge';
+        
+        return `${device} - ${os} - ${browser}`;
+    }
+    
+    // 记录聊天内容
+    async recordChat(message, response) {
+        if (!this.visitorId) return;
+        
+        try {
+            await fetch('/api/record/chat', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    visitorId: this.visitorId,
+                    message: message,
+                    response: response,
+                    timestamp: Date.now()
+                })
+            });
+        } catch (error) {
+            console.error('记录聊天失败:', error);
+        }
+    }
+    
+    // 修改现有的 sendMessage 方法，在发送和接收时添加记录
+    async sendMessage() {
+        const userInput = this.userInput.value.trim();
+        if (!userInput) return;
+        
+        if (!this.apiKey) {
+            this.openSettings();
+            return;
+        }
+        
+        if (this.isLoading) return;
+        
+        this.isLoading = true;
+        this.sendBtn.disabled = true;
+        this.userInput.disabled = true;
+        
+        // 隐藏欢迎屏幕
+        if (this.messages.length === 0) {
+            this.chatContainer.innerHTML = '';
+        }
+        
+        // 添加用户消息
+        this.addMessageToUI('user', userInput);
+        this.messages.push({ role: 'user', content: userInput });
+        
+        // 记录用户消息
+        await this.recordChat(userInput, null);
+        
+        this.userInput.value = '';
+        this.userInput.style.height = 'auto';
+        
+        try {
+            if (this.config.streamMode) {
+                await this.sendStreamMessage();
+            } else {
+                await this.sendNormalMessage();
+            }
+            
+            // 保存对话
+            this.saveCurrentConversation();
+            this.loadConversations();
+        } catch (error) {
+            this.removeTypingIndicator();
+            this.addMessageToUI('assistant', `❌ 错误: ${error.message}`);
+        } finally {
+            this.isLoading = false;
+            this.sendBtn.disabled = false;
+            this.userInput.disabled = false;
+            this.userInput.focus();
+            this.updateUIState();
+        }
+    }
+    
+    // 修改流式消息方法，添加记录
+    async sendStreamMessage() {
+        this.addTypingIndicator();
+        
+        const response = await fetch('https://api.deepseek.com/v1/chat/completions', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${this.apiKey}`
+            },
+            body: JSON.stringify({
+                model: 'deepseek-chat',
+                messages: this.messages,
+                stream: true,
+                temperature: this.config.temperature,
+                max_tokens: this.config.maxTokens
+            })
+        });
+        
+        if (!response.ok) {
+            this.removeTypingIndicator();
+            const errorData = await response.json();
+            throw new Error(errorData.error?.message || `HTTP ${response.status}`);
+        }
+        
+        this.removeTypingIndicator();
+        
+        const messageDiv = document.createElement('div');
+        messageDiv.className = 'message assistant';
+        const contentDiv = document.createElement('div');
+        contentDiv.className = 'message-content';
+        messageDiv.appendChild(contentDiv);
+        this.chatContainer.appendChild(messageDiv);
+        
+        let fullContent = '';
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        
+        try {
+            while (true) {
+                const { done, value } = await reader.read();
+                if (done) break;
+                
+                const chunk = decoder.decode(value);
+                const lines = chunk.split('\n');
+                
+                for (const line of lines) {
+                    if (line.startsWith('data: ')) {
+                        const data = line.slice(6);
+                        if (data === '[DONE]') continue;
+                        
+                        try {
+                            const parsed = JSON.parse(data);
+                            const delta = parsed.choices[0].delta;
+                            
+                            if (delta && delta.content) {
+                                fullContent += delta.content;
+                                contentDiv.innerHTML = this.renderMarkdown(fullContent);
+                                this.scrollToBottom();
+                            }
+                        } catch (e) {
+                            // 忽略解析错误
+                        }
+                    }
+                }
+            }
+            
+            // 记录AI回复
+            if (fullContent) {
+                const lastUserMessage = this.messages[this.messages.length - 1]?.content;
+                await this.recordChat(lastUserMessage, fullContent);
+                this.messages.push({ role: 'assistant', content: fullContent });
+            }
+        } catch (error) {
+            contentDiv.innerHTML = `❌ 流式输出错误: ${error.message}`;
+            throw error;
+        }
+    }
+    
+    // 修改普通消息方法，添加记录
+    async sendNormalMessage() {
+        this.addTypingIndicator();
+        
+        const response = await fetch('https://api.deepseek.com/v1/chat/completions', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${this.apiKey}`
+            },
+            body: JSON.stringify({
+                model: 'deepseek-chat',
+                messages: this.messages,
+                stream: false,
+                temperature: this.config.temperature,
+                max_tokens: this.config.maxTokens
+            })
+        });
+        
+        this.removeTypingIndicator();
+        
+        if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(errorData.error?.message || `HTTP ${response.status}`);
+        }
+        
+        const data = await response.json();
+        const content = data.choices[0].message.content;
+        
+        this.addMessageToUI('assistant', content);
+        
+        // 记录AI回复
+        const lastUserMessage = this.messages[this.messages.length - 1]?.content;
+        await this.recordChat(lastUserMessage, content);
+        this.messages.push({ role: 'assistant', content: content });
+    }
+}
+class DeepSeekUI {
+    constructor() {
+        this.apiKey = localStorage.getItem('deepseek_api_key') || '';
+        this.messages = [];
+        this.currentConversationId = Date.now().toString();
+        this.conversations = JSON.parse(localStorage.getItem('conversations') || '{}');
+        this.isLoading = false;
         this.currentStreamMessage = null; // 跟踪当前流式消息
         
         this.config = {
