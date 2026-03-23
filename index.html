@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>DeepSeek - AI 智能助手</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <!-- 侧边栏 -->
+    <aside class="sidebar" id="sidebar">
+        <div class="sidebar-header">
+            <div class="logo">
+                <svg width="32" height="32" viewBox="0 0 32 32" fill="none">
+                    <path d="M16 2L2 9L16 16L30 9L16 2Z" fill="#10A37F" fill-opacity="0.8"/>
+                    <path d="M2 9L16 16L30 9L16 23L2 9Z" fill="#10A37F" fill-opacity="0.6"/>
+                    <path d="M16 16L30 9L16 23L2 9L16 16Z" fill="#10A37F" fill-opacity="0.4"/>
+                </svg>
+                <span>DeepSeek</span>
+            </div>
+            <button class="new-chat-btn" id="newChatBtn">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M12 5v14M5 12h14"/>
+                </svg>
+                新对话
+            </button>
+        </div>
+        
+        <div class="chat-history" id="chatHistory">
+            <div class="history-header">历史对话</div>
+            <div class="history-list" id="historyList">
+                <!-- 历史记录会动态添加 -->
+            </div>
+        </div>
+        
+        <div class="sidebar-footer">
+            <div class="api-status" id="apiStatus">
+                <div class="status-dot"></div>
+                <span>未配置API</span>
+            </div>
+            <button class="settings-btn" id="settingsBtn">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <circle cx="12" cy="12" r="3"/>
+                    <path d="M19.4 15a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H5.78a1.65 1.65 0 0 0-1.51 1 1.65 1.65 0 0 0 .33 1.82l.04.04A10 10 0 0 0 12 17.66a10 10 0 0 0 6.36-2.62l.04-.04z"/>
+                </svg>
+            </button>
+        </div>
+    </aside>
+    
+    <!-- 主内容区 -->
+    <main class="main-content">
+        <!-- 顶部栏 -->
+        <header class="top-bar">
+            <button class="menu-toggle" id="menuToggle">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M3 12h18M3 6h18M3 18h18"/>
+                </svg>
+            </button>
+            <div class="model-selector">
+                <button class="model-btn">
+                    <span>DeepSeek Chat</span>
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                        <path d="M6 9l6 6 6-6"/>
+                    </svg>
+                </button>
+            </div>
+            <div class="top-bar-actions">
+                <button class="share-btn">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                        <path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8M16 6l-4-4-4 4M12 2v13"/>
+                    </svg>
+                </button>
+            </div>
+        </header>
+        
+        <!-- 聊天区域 -->
+        <div class="chat-container" id="chatContainer">
+            <div class="welcome-screen" id="welcomeScreen">
+                <div class="welcome-icon">
+                    <svg width="64" height="64" viewBox="0 0 32 32" fill="none">
+                        <path d="M16 2L2 9L16 16L30 9L16 2Z" fill="#10A37F" fill-opacity="0.8"/>
+                        <path d="M2 9L16 16L30 9L16 23L2 9Z" fill="#10A37F" fill-opacity="0.6"/>
+                        <path d="M16 16L30 9L16 23L2 9L16 16Z" fill="#10A37F" fill-opacity="0.4"/>
+                    </svg>
+                </div>
+                <h1>你好，我是 DeepSeek</h1>
+                <p>我可以帮你写作、编程、解答问题，或者只是聊聊天</p>
+                <div class="quick-actions">
+                    <button class="quick-action" data-prompt="帮我写一篇关于人工智能的文章">
+                        📝 写文章
+                    </button>
+                    <button class="quick-action" data-prompt="用Python写一个贪吃蛇游戏">
+                        💻 写代码
+                    </button>
+                    <button class="quick-action" data-prompt="解释一下量子计算">
+                        🔬 解答问题
+                    </button>
+                    <button class="quick-action" data-prompt="给我讲个笑话">
+                        😊 轻松一下
+                    </button>
+                </div>
+            </div>
+        </div>
+        
+        <!-- 输入区域 -->
+        <div class="input-area">
+            <div class="input-container">
+                <textarea 
+                    id="userInput" 
+                    placeholder="给 DeepSeek 发送消息..." 
+                    rows="1"
+                ></textarea>
+                <div class="input-actions">
+                    <button class="attach-btn" id="attachBtn">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                            <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/>
+                        </svg>
+                    </button>
+                    <button class="send-btn" id="sendBtn" disabled>
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z"/>
+                        </svg>
+                    </button>
+                </div>
+            </div>
+            <div class="input-footer">
+                <span>DeepSeek 可能会产生不准确的信息，请谨慎使用</span>
+            </div>
+        </div>
+    </main>
+    
+    <!-- 设置模态框 -->
+    <div class="modal" id="settingsModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>设置</h3>
+                <button class="modal-close">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="setting-item">
+                    <label>API Key</label>
+                    <input type="password" id="apiKeyInput" placeholder="sk-..." class="api-input-field">
+                    <button id="saveApiKeyBtn" class="save-api-btn">保存</button>
+                </div>
+                <div class="setting-item">
+                    <label>最大输出长度</label>
+                    <select id="maxTokensSelect">
+                        <option value="2048">2,048 tokens</option>
+                        <option value="4096" selected>4,096 tokens (推荐)</option>
+                        <option value="8192">8,192 tokens (超长)</option>
+                    </select>
+                </div>
+                <div class="setting-item">
+                    <label>创意度 (Temperature)</label>
+                    <input type="range" id="temperature" min="0" max="1" step="0.05" value="0.7">
+                    <span id="tempValue">0.7</span>
+                </div>
+                <div class="setting-item">
+                    <label>
+                        <input type="checkbox" id="streamMode" checked>
+                        流式输出（实时显示回复）
+                    </label>
+                </div>
+                <div class="setting-item">
+                    <label>对话历史</label>
+                    <button id="clearHistoryBtn" class="danger-btn">清空所有对话</button>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <script src="script.js"></script>
+</body>
+</html>
