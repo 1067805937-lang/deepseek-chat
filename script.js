@@ -31,6 +31,17 @@ class DeepSeekUI {
         this.loadSavedKey();
         this.updateUIState();
         this.initVisitorTracking();
+        this.checkAnnouncement();  // 检查公告
+        
+        // 监听 localStorage 变化（用于实时接收公告）
+        window.addEventListener('storage', (e) => {
+            if (e.key === 'global_announcement') {
+                if (e.newValue) {
+                    const announcement = JSON.parse(e.newValue);
+                    this.showBanner(announcement.message);
+                }
+            }
+        });
     }
     
     initElements() {
@@ -107,7 +118,7 @@ class DeepSeekUI {
                 this.userInput.style.height = 'auto';
                 this.userInput.style.height = Math.min(this.userInput.scrollHeight, 200) + 'px';
                 if (this.sendBtn) {
-                    this.sendBtn.disabled = !this.userInput.value.trim() || !this.apiKey;
+                    this.sendBtn.disabled = !this.userInput.value.trim() || !this.getApiKey();
                 }
             });
         }
@@ -140,7 +151,7 @@ class DeepSeekUI {
             this.userInput.addEventListener('keydown', (e) => {
                 if (e.key === 'Enter' && !e.shiftKey) {
                     e.preventDefault();
-                    if (this.userInput.value.trim() && this.apiKey && !this.isLoading) {
+                    if (this.userInput.value.trim() && this.getApiKey() && !this.isLoading) {
                         this.sendMessage();
                     }
                 }
@@ -148,8 +159,198 @@ class DeepSeekUI {
         }
     }
     
+    // ========== 新增：公告相关方法 ==========
+    
+    // 检查并显示公告
+    checkAnnouncement() {
+        const saved = localStorage.getItem('global_announcement');
+        if (saved) {
+            try {
+                const announcement = JSON.parse(saved);
+                if (announcement.active) {
+                    this.showBanner(announcement.message);
+                }
+            } catch(e) {}
+        }
+    }
+    
+    // 显示公告横幅
+    showBanner(message) {
+        let banner = document.getElementById('globalBanner');
+        
+        // 如果横幅不存在，创建它
+        if (!banner) {
+            banner = document.createElement('div');
+            banner.id = 'globalBanner';
+            banner.className = 'global-banner';
+            banner.style.cssText = `
+                position: fixed;
+                top: 20px;
+                right: 20px;
+                max-width: 350px;
+                background: white;
+                border-radius: 12px;
+                box-shadow: 0 4px 20px rgba(0,0,0,0.15);
+                z-index: 1000;
+                border-left: 4px solid #10a37f;
+                display: none;
+            `;
+            banner.innerHTML = `
+                <div class="banner-content" style="padding: 16px; position: relative;">
+                    <div class="banner-message" style="margin-bottom: 12px; font-size: 14px; line-height: 1.5; color: #333; padding-right: 24px;"></div>
+                    <div class="banner-reply" style="display: flex; gap: 8px; margin-top: 12px;">
+                        <input type="text" id="bannerReplyInput" placeholder="输入回复..." style="flex: 1; padding: 8px 12px; border: 1px solid #ddd; border-radius: 6px; font-size: 14px;">
+                        <button id="sendReplyBtn" style="padding: 8px 16px; background: #10a37f; color: white; border: none; border-radius: 6px; cursor: pointer;">发送回复</button>
+                    </div>
+                    <button class="banner-close" id="closeBannerBtn" style="position: absolute; top: 8px; right: 8px; background: none; border: none; font-size: 20px; cursor: pointer; color: #999;">×</button>
+                </div>
+            `;
+            document.body.appendChild(banner);
+        }
+        
+        const bannerMessage = banner.querySelector('.banner-message');
+        if (bannerMessage) {
+            bannerMessage.innerHTML = message;
+        }
+        
+        banner.style.display = 'block';
+        
+        // 绑定回复功能
+        const sendReplyBtn = document.getElementById('sendReplyBtn');
+        const replyInput = document.getElementById('bannerReplyInput');
+        
+        const handleReply = () => {
+            const reply = replyInput ? replyInput.value.trim() : '';
+            if (reply) {
+                this.sendAdminReply(reply);
+                if (replyInput) replyInput.value = '';
+                banner.style.display = 'none';
+            }
+        };
+        
+        if (sendReplyBtn) {
+            sendReplyBtn.onclick = handleReply;
+        }
+        if (replyInput) {
+            replyInput.onkeypress = (e) => {
+                if (e.key === 'Enter') handleReply();
+            };
+        }
+        
+        const closeBtn = document.getElementById('closeBannerBtn');
+        if (closeBtn) {
+            closeBtn.onclick = () => {
+                banner.style.display = 'none';
+            };
+        }
+    }
+    
+    // 发送回复给管理员
+    async sendAdminReply(reply) {
+        try {
+            await fetch('/api/record/reply', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    visitorId: this.visitorId,
+                    reply: reply,
+                    timestamp: Date.now()
+                })
+            });
+        } catch (error) {
+            console.error('发送回复失败:', error);
+        }
+    }
+    
+    // ========== 新增：API Key 相关方法 ==========
+    
+    // 获取 API Key（优先用户自己的，其次免费 Key）
+    getApiKey() {
+        let key = localStorage.getItem('deepseek_api_key');
+        if (!key) {
+            key = localStorage.getItem('free_api_key');
+            if (key) {
+                this.showApiPrompt('正在使用免费 API Key');
+            }
+        }
+        return key;
+    }
+    
+    // 显示 API 配置提示
+    showApiPrompt(message) {
+        // 避免重复添加
+        if (document.getElementById('api-prompt')) return;
+        
+        const container = this.chatContainer;
+        if (!container) return;
+        
+        const promptDiv = document.createElement('div');
+        promptDiv.id = 'api-prompt';
+        promptDiv.className = 'api-prompt';
+        promptDiv.style.cssText = `
+            text-align: center;
+            padding: 40px;
+            background: #fef3c7;
+            border-radius: 12px;
+            margin: 20px auto;
+            max-width: 500px;
+        `;
+        promptDiv.innerHTML = `
+            <h3 style="color: #92400e; margin-bottom: 12px;">🔑 需要配置 API Key</h3>
+            <p style="color: #b45309; margin-bottom: 16px;">${message || '请点击右上角设置按钮配置您的 API Key'}</p>
+            <div class="free-api-info" style="background: white; padding: 12px; border-radius: 8px; margin-top: 16px; font-size: 13px; color: #065f46;">
+                💡 提示：管理员已提供免费 API Key，点击下方按钮自动配置<br>
+                <button id="useFreeApiBtn" style="margin-top: 10px; background: #10a37f; color: white; border: none; padding: 8px 16px; border-radius: 6px; cursor: pointer;">使用免费 API Key</button>
+            </div>
+        `;
+        
+        const welcomeScreen = container.querySelector('.welcome-screen');
+        if (welcomeScreen) {
+            container.insertBefore(promptDiv, welcomeScreen);
+        } else {
+            container.appendChild(promptDiv);
+        }
+        
+        const useFreeBtn = document.getElementById('useFreeApiBtn');
+        if (useFreeBtn) {
+            useFreeBtn.onclick = () => {
+                const freeKey = localStorage.getItem('free_api_key');
+                if (freeKey) {
+                    this.apiKey = freeKey;
+                    localStorage.setItem('deepseek_api_key', freeKey);
+                    this.updateApiStatus(true);
+                    promptDiv.remove();
+                    this.updateUIState();
+                    this.showToast('已启用免费 API Key，开始聊天吧！');
+                } else {
+                    alert('免费 API Key 暂未配置，请联系管理员');
+                }
+            };
+        }
+    }
+    
+    showToast(message) {
+        const toast = document.createElement('div');
+        toast.style.cssText = `
+            position: fixed;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: #10a37f;
+            color: white;
+            padding: 12px 24px;
+            border-radius: 8px;
+            z-index: 10000;
+            animation: fadeInOut 2s ease;
+        `;
+        toast.textContent = message;
+        document.body.appendChild(toast);
+        setTimeout(() => toast.remove(), 2000);
+    }
+    
+    // ========== 原有方法保持不变 ==========
+    
     async initVisitorTracking() {
-        // 如果已经有 visitorId，就不重复记录
         if (this.visitorId) return;
         
         try {
@@ -165,9 +366,7 @@ class DeepSeekUI {
             
             const recordResponse = await fetch('/api/record/visit', {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
+                headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(visitorInfo)
             });
             
@@ -184,7 +383,6 @@ class DeepSeekUI {
     getDeviceInfo() {
         const ua = navigator.userAgent;
         let device = 'Desktop';
-        
         if (/Mobile/i.test(ua)) device = 'Mobile';
         else if (/Tablet/i.test(ua)) device = 'Tablet';
         
@@ -206,13 +404,10 @@ class DeepSeekUI {
     
     async recordChat(message, response) {
         if (!this.visitorId) return;
-        
         try {
             await fetch('/api/record/chat', {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
+                headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     visitorId: this.visitorId,
                     message: message,
@@ -265,13 +460,18 @@ class DeepSeekUI {
             this.updateApiStatus(true);
             this.updateUIState();
             this.closeSettings();
+            // 移除提示
+            const prompt = document.getElementById('api-prompt');
+            if (prompt) prompt.remove();
         } else {
             alert('请输入有效的 API Key');
         }
     }
     
     loadSavedKey() {
-        if (this.apiKey) {
+        const key = this.getApiKey();
+        if (key) {
+            this.apiKey = key;
             this.updateApiStatus(true);
         } else {
             this.updateApiStatus(false);
@@ -292,7 +492,7 @@ class DeepSeekUI {
     }
     
     updateUIState() {
-        const hasKey = !!this.apiKey;
+        const hasKey = !!this.getApiKey();
         if (this.sendBtn) {
             this.sendBtn.disabled = !hasKey || !this.userInput?.value.trim() || this.isLoading;
         }
@@ -504,10 +704,15 @@ class DeepSeekUI {
         const userInput = this.userInput.value.trim();
         if (!userInput) return;
         
-        if (!this.apiKey) {
+        // 检查 API Key
+        let apiKey = this.getApiKey();
+        if (!apiKey) {
+            this.showApiPrompt('请先配置 API Key');
             this.openSettings();
             return;
         }
+        
+        this.apiKey = apiKey;
         
         if (this.isLoading) return;
         
